@@ -2,6 +2,8 @@ package com.gamebalance.controller;
 
 import com.gamebalance.service.GroqService;
 import org.bson.Document;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,6 +17,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/health")
 public class HealthController {
+
+    private static final Logger log = LoggerFactory.getLogger(HealthController.class);
 
     private final GroqService groqService;
     private final MongoTemplate mongoTemplate;
@@ -30,10 +34,15 @@ public class HealthController {
         String databaseName = "";
         try {
             Document ping = mongoTemplate.executeCommand(new Document("ping", 1));
-            mongoConnected = ping != null && Double.valueOf(1.0).equals(ping.getDouble("ok"));
-            databaseName = mongoTemplate.getDb().getName();
-        } catch (Exception ignored) {
+            Object okVal = ping != null ? ping.get("ok") : null;
+            mongoConnected = okVal instanceof Number num && num.doubleValue() == 1.0;
+            if (mongoConnected) {
+                databaseName = mongoTemplate.getDb().getName();
+            }
+        } catch (Exception ex) {
+            log.warn("Health check MongoDB ping failed: {}", ex.getMessage());
             mongoConnected = false;
+            databaseName = "";
         }
 
         Map<String, Object> body = new LinkedHashMap<>();

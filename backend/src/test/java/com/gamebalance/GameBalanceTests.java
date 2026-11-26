@@ -2,6 +2,7 @@ package com.gamebalance;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gamebalance.config.MongoConfig;
+import com.gamebalance.controller.HealthController;
 import com.gamebalance.dto.*;
 import com.gamebalance.exception.ConflictException;
 import com.gamebalance.model.*;
@@ -9,10 +10,14 @@ import com.gamebalance.repository.*;
 import com.gamebalance.security.JwtUtil;
 import com.gamebalance.service.*;
 import com.mongodb.MongoClientSettings;
+import com.mongodb.client.MongoDatabase;
+import org.bson.Document;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -303,5 +308,41 @@ class GameBalanceTests {
         MongoClientSettings settings = builder.build();
 
         assertFalse(settings.getSslSettings().isInvalidHostNameAllowed());
+    }
+
+    @Test
+    void healthControllerHandlesIntegerAndDoublePingResponses() {
+        GroqService groq = mock(GroqService.class);
+        when(groq.isConfigured()).thenReturn(true);
+        when(groq.getConfiguredModel()).thenReturn("llama-3.3-70b-versatile");
+        when(groq.getLastStatus()).thenReturn("OK");
+
+        MongoTemplate mongoTemplate = mock(MongoTemplate.class);
+        MongoDatabase mongoDb = mock(MongoDatabase.class);
+        when(mongoDb.getName()).thenReturn("GameBalanceAI");
+        when(mongoTemplate.getDb()).thenReturn(mongoDb);
+
+        HealthController controller = new HealthController(groq, mongoTemplate);
+
+        // Atlas 8.0 returns BSON int32 ok=1
+        when(mongoTemplate.executeCommand(any(Document.class))).thenReturn(new Document("ok", 1));
+        ResponseEntity<java.util.Map<String, Object>> atlasResp = controller.health();
+        assertEquals("UP", atlasResp.getBody().get("status"));
+        assertEquals(true, atlasResp.getBody().get("mongoConnected"));
+        assertEquals("GameBalanceAI", atlasResp.getBody().get("database"));
+
+        // Local mongod returns BSON double ok=1.0
+        when(mongoTemplate.executeCommand(any(Document.class))).thenReturn(new Document("ok", 1.0));
+        ResponseEntity<java.util.Map<String, Object>> localResp = controller.health();
+        assertEquals("UP", localResp.getBody().get("status"));
+        assertEquals(true, localResp.getBody().get("mongoConnected"));
+        assertEquals("GameBalanceAI", localResp.getBody().get("database"));
+
+        // Ping failure returns DEGRADED
+        when(mongoTemplate.executeCommand(any(Document.class))).thenThrow(new RuntimeException("connection error"));
+        ResponseEntity<java.util.Map<String, Object>> failResp = controller.health();
+        assertEquals("DEGRADED", failResp.getBody().get("status"));
+        assertEquals(false, failResp.getBody().get("mongoConnected"));
+        assertEquals("", failResp.getBody().get("database"));
     }
 }
