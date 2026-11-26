@@ -14,6 +14,11 @@ RUN mvn clean package -DskipTests -B
 FROM eclipse-temurin:17-jre-jammy AS runtime
 WORKDIR /app
 
+# Ensure up-to-date CA certificates in the container
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 # Create and use a non-root user for security
 RUN groupadd -r appgroup && useradd -r -g appgroup appuser
 
@@ -22,8 +27,11 @@ RUN chown appuser:appgroup /app/app.jar
 
 USER appuser
 
-# Render sets PORT dynamically at runtime; defaults to 8080 locally
+# Render sets PORT dynamically at runtime; defaults to 8080 locally.
+# Use TLSv1.2 by default to prevent JDK 17 TLS 1.3 handshake internal_error alerts with Atlas proxies,
+# while preserving full certificate and hostname verification (overridable via JAVA_OPTS).
 ENV PORT=8080
+ENV JAVA_OPTS="-Djdk.tls.client.protocols=TLSv1.2"
 EXPOSE 8080
 
-ENTRYPOINT ["sh", "-c", "exec java -XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -Dserver.port=${PORT:-8080} -jar /app/app.jar"]
+ENTRYPOINT ["sh", "-c", "exec java -XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 ${JAVA_OPTS} -Dserver.port=${PORT:-8080} -jar /app/app.jar"]

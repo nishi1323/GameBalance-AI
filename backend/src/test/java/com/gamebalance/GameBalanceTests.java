@@ -1,12 +1,14 @@
 package com.gamebalance;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.gamebalance.config.MongoConfig;
 import com.gamebalance.dto.*;
 import com.gamebalance.exception.ConflictException;
 import com.gamebalance.model.*;
 import com.gamebalance.repository.*;
 import com.gamebalance.security.JwtUtil;
 import com.gamebalance.service.*;
+import com.mongodb.MongoClientSettings;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -291,5 +293,15 @@ class GameBalanceTests {
         assertEquals(5.5, saved.getTotalDurationHours());
         assertTrue(saved.isIrregularPattern());
         assertTrue(saved.isHadLateNightGaming());
+    }
+
+    @Test
+    void mongoConfigPreservesStrictTlsHostnameVerification() {
+        MongoConfig config = new MongoConfig();
+        MongoClientSettings.Builder builder = MongoClientSettings.builder();
+        config.mongoClientSettingsCustomizer().customize(builder);
+        MongoClientSettings settings = builder.build();
+
+        assertFalse(settings.getSslSettings().isInvalidHostNameAllowed());
     }
 }
